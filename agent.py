@@ -13,6 +13,8 @@ Build and test your three tools in `tools.py` first. Then come here.
     python agent.py          runs both example paths below
 """
 
+import re
+
 import config
 import trace
 from tools import search_listings, suggest_outfit, create_fit_card
@@ -45,6 +47,35 @@ def new_session(query: str, wardrobe: dict) -> dict:
         "fit_card": None,            # what create_fit_card returned
         "error": None,               # set when the run ended early
     }
+
+
+# ── query parsing ─────────────────────────────────────────────────────────────
+
+def _parse_query(query: str) -> dict:
+    """
+    Pull a description, an optional size, and an optional price ceiling out of
+    a plain-language query, by regex.
+
+    "vintage graphic tee under $30, size M" ->
+        {"description": "vintage graphic tee", "size": "M", "max_price": 30.0}
+    """
+    text = query
+
+    max_price = None
+    price_match = re.search(r"under\s*\$?(\d+(?:\.\d+)?)", text, re.IGNORECASE)
+    if price_match:
+        max_price = float(price_match.group(1))
+        text = text[: price_match.start()] + text[price_match.end() :]
+
+    size = None
+    size_match = re.search(r"\bsize\s+([A-Za-z0-9/.\-]+)", text, re.IGNORECASE)
+    if size_match:
+        size = size_match.group(1)
+        text = text[: size_match.start()] + text[size_match.end() :]
+
+    description = re.sub(r"\s+", " ", text).strip(" ,.")
+
+    return {"description": description, "size": size, "max_price": max_price}
 
 
 # ── planning loop ─────────────────────────────────────────────────────────────
@@ -107,8 +138,38 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     """
     session = new_session(query, wardrobe)
 
-    # TODO: delete these two lines and build the loop.
-    session["error"] = "The planning loop isn't built yet — see the TODO in agent.py."
+    trace.check_iterations(1)
+
+    session["parsed"] = _parse_query(query)
+    parsed = session["parsed"]
+
+    session["search_results"] = search_listings(
+        parsed["description"], size=parsed["size"], max_price=parsed["max_price"]
+    )
+    search_results = session["search_results"]
+
+    # ⚠️ THE BRANCH: nothing came back, so stop before calling the model tools.
+    if not search_results:
+        constraints = []
+        if parsed["size"]:
+            constraints.append(f"size {parsed['size']}")
+        if parsed["max_price"] is not None:
+            constraints.append(f"a price under ${parsed['max_price']:.2f}")
+        constraint_text = f" with {' and '.join(constraints)}" if constraints else ""
+        session["error"] = (
+            f"No listings matched '{parsed['description']}'{constraint_text}. "
+            "Try a broader description, a different size, or a higher price limit."
+        )
+        return session
+
+    session["selected_item"] = search_results[0]
+    selected_item = session["selected_item"]
+
+    session["outfit_suggestion"] = suggest_outfit(selected_item, session["wardrobe"])
+    outfit_suggestion = session["outfit_suggestion"]
+
+    session["fit_card"] = create_fit_card(outfit_suggestion, selected_item)
+
     return session
 
 
