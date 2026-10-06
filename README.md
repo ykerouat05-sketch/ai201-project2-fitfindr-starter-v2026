@@ -39,8 +39,7 @@
 
 ## What This Does
 
-<!-- Three or four sentences: what a user asks for, and what they get back. -->
-
+A user types a plain-language query like `"vintage graphic tee under $30, size M"`. FitFindr searches the mock listings in `data/listings.json` for items matching the description, and narrows by size and price when the query specifies them. It picks the top-ranked listing, asks the model for an outfit suggestion that pairs the item with pieces already in the user's wardrobe (or general styling advice if the wardrobe is empty), and then asks the model to write a short fit-card caption for the find. The user gets back the selected item, the outfit suggestion, and the caption — or, if nothing in the data matches, a message explaining what to change about the search instead.
 
 
 ---
@@ -97,7 +96,7 @@
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** TBD — to be decided in Milestone 3 when `run_agent` is implemented (regex, string splitting, or asking the model).
+**How the query is parsed:** Regex, in `agent.py::_parse_query`. One pattern pulls out `under $30`-style phrases for `max_price`; another pulls out `size M`-style phrases for `size`; whatever text is left over, with those matched pieces stripped out and whitespace collapsed, becomes `description`.
 
 **What moves through the session:** `query` → `parsed` (description/size/max_price) → `search_results` (list from `search_listings`) → `selected_item` (one dict from `search_results`) → `outfit_suggestion` (string from `suggest_outfit`, given `selected_item` and `wardrobe`) → `fit_card` (string from `create_fit_card`, given `outfit_suggestion` and `selected_item`). `error` is set instead of the remaining fields if the branch stops early.
 
@@ -147,15 +146,15 @@ $ python -c "from tools import create_fit_card; ..."
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I gave Claude my Milestone 2 Tool Inventory spec and asked it to implement `search_listings`, `suggest_outfit`, and `create_fit_card` in `tools.py` to match it, without touching anything else.
+- *What came back:* For sizes, Claude didn't do a plain substring check — it pointed out that `"s" in "us 9"` and `"l" in "xl"` are both `True`, so it split each listing's size string into tokens (on anything that isn't a letter/digit) and matched the query size against those tokens instead. `search_listings` also scores by word overlap and caps results at `config.SEARCH_RESULT_LIMIT`, and `create_fit_card` returns a plain string without calling the model when `outfit` is empty/whitespace.
+- *What I changed:* I ran the three terminal tests from the docstrings myself, plus the empty-list/empty-wardrobe/empty-outfit cases, and they all matched my spec, so I didn't change the implementation.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I asked Claude to wire `run_agent()` in `agent.py` using my Milestone 2 branch rule, with the requirement that every tool's result gets written into `session[...]` and read back out before the next call (not passed straight from one function call into the next).
+- *What came back:* Claude added a small regex helper, `_parse_query()`, to split a query like `"graphic tee under $30"` into `description`/`size`/`max_price`, then wrote `run_agent` so it stores into `session["search_results"]`, `session["selected_item"]`, `session["outfit_suggestion"]`, and `session["fit_card"]` one at a time, reading each back before the next call. It kept the session key `outfit_suggestion` (not `outfit`) since that's the key `new_session()` already defines.
+- *What I changed:* I ran the happy-path query and the impossible query myself and checked `session["selected_item"] is session["search_results"][0]` directly — it was `True` — and confirmed the empty-search path left `outfit_suggestion` and `fit_card` as `None` without calling the model. Both matched what I wanted, so I kept it as is.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
