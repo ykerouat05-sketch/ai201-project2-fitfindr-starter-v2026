@@ -14,7 +14,7 @@ Build and test your three tools in `tools.py` first. Then come here.
 """
 
 import re
-
+from mcp_client import call_tool
 import config
 import trace
 from tools import search_listings, suggest_outfit, create_fit_card
