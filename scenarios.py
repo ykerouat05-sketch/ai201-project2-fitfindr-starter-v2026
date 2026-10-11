@@ -41,6 +41,32 @@ SCENARIOS = [
         "criterion": 3,
     },
     {
+        # Milestone 4 diagnosis: the scenario above can't tell a correct,
+        # token-based size filter from a naive substring one, because its
+        # requested size ("L") never collides with a superstring in the
+        # candidate pool. This scenario closes that gap with real data.
+        #
+        # "suede" appears in exactly one listing: lst_028, a Chelsea boot
+        # sized "US 8.5". Verified directly (not assumed) against both
+        # implementations before adding this:
+        #   - correct (token match): "s" is not a token of "us 8.5"
+        #     (tokens are ["us", "8", "5"]), so the boot is filtered out
+        #     before scoring, and search_listings("suede", size="S")
+        #     returns [] — nothing else in the data contains "suede".
+        #   - naive substring ("s" in "us 8.5".lower()): True, so the boot
+        #     survives filtering, is the ONLY listing scoring > 0 on
+        #     "suede", and becomes search_results[0] — a shoe standing in
+        #     for a requested clothing size "S".
+        # A regression to substring matching is therefore directly
+        # observable here: the agent would select a listing whose actual
+        # size plainly fails the requested constraint, instead of stopping
+        # on an empty search. Criterion 3.
+        "name": "size matching rejects a shoe-size false match",
+        "query": "suede size S",
+        "wardrobe": "example",
+        "criterion": 3,
+    },
+    {
         # Same query as criterion 1, run 5 separate times (run_eval.py's
         # per-scenario try count) with caching off, so the search always
         # picks the same listing but create_fit_card has to generate 5

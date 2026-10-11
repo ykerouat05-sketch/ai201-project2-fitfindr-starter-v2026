@@ -414,25 +414,87 @@ All three failure modes were triggered on purpose and handled without a crash or
 
      `python run_eval.py --label after` -->
 
-**What I changed:**
+**What I changed:** Added one new scenario to `scenarios.py` under criterion 3 —
+`"size matching rejects a shoe-size false match"` (query: `"suede size S"`) — on
+top of the original criterion 3 scenario, which I left untouched. No code in
+`agent.py` or `tools.py` was changed, and criterion 3's wording and 4/5 target in
+`criteria.md` were left exactly as written.
 
-**Which failure it was meant to fix:**
+**Which failure it was meant to fix:** Not a code failure — a test-coverage gap
+found in the Milestone 4 diagnosis. The original criterion 3 scenario
+(`"tee size L under $30"`) always selected an item whose size is the plain token
+`"L"`, which a broken, naive substring-based size filter would also match
+correctly — so a 5/5 PASS there couldn't actually tell a correct implementation
+from a regressed one. Before adding the new scenario, I verified with real data
+that `"suede"` appears in exactly one listing (`lst_028`, a Chelsea boot sized
+`"US 8.5"`), and confirmed by running an isolated copy of a naive substring
+matcher (not `tools.py` itself) that it *would* incorrectly select that boot for
+a `size="S"` query, while the real `tools.py::_size_matches` correctly excludes
+it. This is a scenario that can actually fail if the implementation regresses,
+not one that passes either way.
 
 ### Run Log — After
 
+Produced by `python run_eval.py --label after`, saved at
+`results/run_2026-10-11_1513_after.md` (the baseline,
+`results/run_2026-10-11_1449_before.md`, was preserved and is unchanged).
+
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. Matching query completes all three tools | 4/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. Impossible query stops early | 5/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Size and price constraints (original scenario) | 4/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Size matching rejects a shoe-size false match (**new**) | 4/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Fit card mentions item, price, platform | 4/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. Correct tool-call order | 5/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
 
-**Did it help, and how do I know:**
+**New scenario, try 1** (query: `suede size S`), from `run_eval.py::run_once`:
 
-<!-- If it made things worse, say that. Honestly reported, that earns full
-     credit and is more interesting than one that worked. -->
+```
+- stopped early: yes — No listings matched 'suede' with size S. Try a broader description, a different size, or a higher price limit.
+- selected_item: (none)
+- search_results: 0
 
+Trace:
+[1] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: [] (empty)
+[2] branch
+      out: No listings matched 'suede' with size S. Try a broader description, a different size, or a higher price limit.
+      →    empty search results — stopping before suggest_outfit/create_fit_card
+```
+All 5 tries produced this identical result — correctly empty, not the mismatched
+boot, confirming the real `_size_matches` implementation handles this adversarial
+case. (A PASS here means "no listing was wrongly selected," consistent with
+criterion 3's wording — the original scenario's 5 tries each selected a listing
+and confirmed it satisfied the constraints, so together the two scenarios cover
+both the "something matches" and "something risky doesn't falsely match" halves
+of the criterion.)
+
+Before vs. after, side by side — nothing regressed, and criterion 3 is now backed
+by a scenario that could actually have failed:
+
+| | Before | After |
+|---|---|---|
+| Criterion 1 | MET (5/5) | MET (5/5) — unchanged |
+| Criterion 2 | MET (5/5) | MET (5/5) — unchanged |
+| Criterion 3 | MET (5/5), weak scenario | MET (5/5) **and** (5/5) on the new adversarial scenario |
+| Criterion 4 | MET (5/5) | MET (5/5) — unchanged |
+| Criterion 5 | MET (5/5) | MET (5/5) — unchanged |
+
+**Did it help, and how do I know:** It strengthened the *test*, not the *agent* —
+and I want to be precise about that distinction rather than overclaim. No line of
+`tools.py` or `agent.py` changed between the before and after runs, so the
+agent's behavior is provably identical; the before/after comparison for criteria
+1, 2, 4, and 5 is really just a determinism/consistency check (and it held — same
+selected items, same trace shapes, same verdicts). The actual improvement is that
+criterion 3 now has a scenario that is capable of catching a real regression in
+`_size_matches` (demonstrated above by simulating the naive-substring bug and
+showing it would have produced a wrong, non-empty result here), where the
+original scenario could not. If `_size_matches` were ever changed back to a
+substring check, this new scenario — not the original one — is the one that
+would turn red. That is a meaningful improvement in what the test suite can
+detect, even though this run surfaced no defect in the current code to fix.
 
 
 ---
