@@ -29,24 +29,45 @@ SCENARIOS = [
         "criterion": 2,
     },
     {
+        # Both a size AND a price ceiling that actually filter something out.
+        # "tee" + size L matches lst_006 ($24) and lst_033 ($19); size S/M
+        # items like lst_002 ($18, no "L" token) and over-budget items
+        # outside $30 should be excluded. Tests that the selected item
+        # really satisfies both constraints, not just that something came
+        # back. Criterion 3.
+        "name": "size and price constraints",
+        "query": "tee size L under $30",
+        "wardrobe": "example",
+        "criterion": 3,
+    },
+    {
+        # Same query as criterion 1, run 5 separate times (run_eval.py's
+        # per-scenario try count) with caching off, so the search always
+        # picks the same listing but create_fit_card has to generate 5
+        # independent captions for it. Tests whether the fit card reliably
+        # mentions the item, price, and platform across tries, not just once.
+        # Criterion 4.
+        "name": "fit card mentions item, price, platform",
+        "query": "vintage graphic tee under $30",
+        "wardrobe": "example",
+        "criterion": 4,
+    },
+    {
+        # A query with exactly one unambiguous match, so the trace is easy
+        # to read: search_listings -> suggest_outfit -> create_fit_card,
+        # in that order, every try. Criterion 5.
+        "name": "correct tool-call order",
+        "query": "platform sneakers size 8",
+        "wardrobe": "example",
+        "criterion": 5,
+    },
+    {
         # A user with nothing saved. One of unit 4's three failure modes.
         "name": "empty wardrobe",
         "query": "denim jacket under $50",
         "wardrobe": "empty",
         "criterion": None,
     },
-    # TODO: add what your criteria 3, 4 and 5 need.
-    #
-    # Set "criterion" to the number in criteria.md that the scenario tests.
-    # "criterion": None means a diagnostic run — useful to have, but it isn't
-    # one of your five, and run_eval.py marks it as such in the table.
-    #
-    # For a state criterion, any normal query works — what you're checking is
-    # what ends up in the session, not what the user typed.
-    #
-    # For a fit-card criterion, you probably want the SAME query listed more
-    # than once, or several different items, depending on what your criterion
-    # actually says.
 ]
 
 WARDROBES = ("example", "empty")

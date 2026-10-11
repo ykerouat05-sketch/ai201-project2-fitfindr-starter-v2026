@@ -174,20 +174,73 @@ $ python -c "from tools import create_fit_card; ..."
      `python run_eval.py --label before` runs everything and writes the table
      into results/. Paste it here and fill in the verdicts. -->
 
+Produced by `python run_eval.py --label before`, saved at
+`results/run_2026-10-11_1449_before.md` (committed as the evidence this
+actually ran — full output for every scenario, every try, is in that file).
+
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. Matching query completes all three tools | 4/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. Impossible query stops early | 5/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Size and price constraints | 4/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Fit card mentions item, price, platform | 4/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. Correct tool-call order | 5/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
 
-**Real output from one try**, pasted as text, naming the file and function
-that produced it:
+**Real output, one try per criterion**, from `results/run_2026-10-11_1449_before.md`
+(produced by `run_eval.py::run_once`, which calls `agent.py::run_agent`):
+
+**Criterion 1 — "matching query completes", try 1** (query: `vintage graphic tee under $30`)
 
 ```
+- stopped early: no
+- selected_item: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+- search_results: 10
+
+Fit card:
+Channeling major 2000s pop-star-off-duty energy with this nostalgic Y2K butterfly baby tee I just scored on depop! At only $18.0, it gives the ultimate pop of color when paired with baggy denim or relaxed trousers. Such a breezy, effortless vibe for everyday wear.
+```
+
+**Criterion 2 — "impossible query stops early", try 1** (query: `designer ballgown size XXS under $5`)
 
 ```
+- stopped early: yes — No listings matched 'designer ballgown' with size XXS and a price under $5.00. Try a broader description, a different size, or a higher price limit.
+- selected_item: (none)
+- search_results: 0
+```
+
+**Criterion 3 — "size and price constraints", try 1** (query: `tee size L under $30`)
+
+```
+- stopped early: no
+- selected_item: Graphic Tee — 2003 Tour Bootleg Style ($24.0, depop)
+- search_results: 2
+```
+The selected item's actual `size` field is `"L"` and `price` is `24.0` — both satisfy the query's `size="L"` and `max_price=30` constraints.
+
+**Criterion 4 — "fit card mentions item, price, platform", try 1** (query: `vintage graphic tee under $30`)
+
+```
+- selected_item: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+
+Fit card:
+Finally scored this dreamy butterfly print Y2K baby tee on depop for just $18.0, and I am so obsessed with the nostalgic early 2000s energy. It has the ultimate effortless cool-girl vibe, whether I'm dressing it down with baggy denim or styling it retro-chic with wide-leg trousers. I just know this piece is going to be my new daily go-to!
+```
+Mentions the item ("butterfly print Y2K baby tee"), the price ("$18.0"), and the platform ("depop").
+
+**Criterion 5 — "correct tool-call order", try 1** (query: `platform sneakers size 8`)
+
+```
+[1] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: 1 items: Platform Sneakers — White Chunky Sole
+[2] suggest_outfit
+      in:  dict with keys: new_item
+      out: Here are two stylish outfit combinations featuring your new platform sneakers:  **Outfit 1: Casual Streetwear*…
+[3] create_fit_card
+      in:  dict with keys: outfit
+      out: Obsessed with these chunky platform sneakers I just scored on poshmark for $48.0! They give off the ultimate e…
+```
+`search_listings` → `suggest_outfit` → `create_fit_card`, in that order, with no steps skipped or reordered.
 
 ---
 
