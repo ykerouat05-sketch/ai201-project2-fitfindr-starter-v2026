@@ -505,6 +505,90 @@ detect, even though this run surfaced no defect in the current code to fix.
      you did. "I ran out of time" is fine if it's true. Pretending nothing is
      left is not. -->
 
+**No criterion remains below target.** Against the most recent evaluation
+(`results/run_2026-10-11_1513_after.md`), all five criteria — plus the
+additional criterion-3 scenario added in Milestone 5 — are MET at or above
+their written targets in `criteria.md`: 1 (4/5 target, 5/5 observed), 2 (5/5,
+5/5), 3-original (4/5, 5/5), 3-new/adversarial (4/5, 5/5), 4 (4/5, 5/5), and 5
+(5/5, 5/5). There is no criterion to diagnose a fix for here, and I'm not
+going to manufacture one — but "nothing failed" isn't the same as "nothing is
+worth flagging," so the honest risks I can see, grounded in the actual code
+and evaluation evidence, are below.
+
+**Milestone 5's fix, stated precisely:** the one change made was adding an
+adversarial test scenario (`"suede size S"`) to `scenarios.py` under criterion
+3, on top of the existing scenario — not a code change. `"suede"` appears in
+exactly one listing (`lst_028`, a Chelsea boot sized `"US 8.5"`). The correct,
+token-based `tools.py::_size_matches` implementation excludes it from a
+`size="S"` query (`"us 8.5"` tokenizes to `["us","8","5"]`, which contains no
+`"s"` token) and `search_listings` correctly returns `[]`, 5/5 tries. A naive
+substring-based matcher (`"s" in "us 8.5"`) would have incorrectly kept that
+boot and returned it as `search_results[0]` — I confirmed this by running an
+isolated simulation of that bug outside `tools.py`, not by assuming it. So
+this change improved *regression detection* for criterion 3: it gives the
+test suite a scenario that can actually turn red if `_size_matches` is ever
+weakened. It did not fix an implementation bug and did not change the agent's
+behavior, because the current size-matching code was already correct —
+`tools.py` and `agent.py` are byte-for-byte identical between the before and
+after runs.
+
+**The MCP move, and whether it changed anything:** moving `search_listings`
+to MCP (Milestone 4) changed exactly one line of behavior in
+`agent.py::run_agent` — the direct call `search_listings(description, size,
+max_price)` became `call_tool("search_listings", {"description": ...,
+"size": ..., "max_price": ...})`, imported from `mcp_client.py`. `call_tool`
+opens a stdio connection to `mcp_server.py`, which registers the same
+`search_listings` implementation from `tools.py` under `@mcp.tool()`, sends
+the request, and unwraps the JSON response back into the identical list of
+listing dicts the direct call always returned — `suggest_outfit` and
+`create_fit_card` were not moved and still call `tools.py` directly. Behavior
+did not change: the before/after evaluation runs selected identical items for
+every matched scenario, and `python mcp_client.py` correctly lists
+`search_listings` with its schema. The only observable difference anywhere in
+the evidence is cosmetic — the trace step is labeled `search_listings (via
+MCP)` instead of `search_listings`. The trade-off, visible directly in
+`mcp_client.py`'s own docstring, is that `call_tool` starts and stops a fresh
+server subprocess over stdio on every single call rather than holding one
+connection open — fine for a CLI tool making one search per query, but a real
+cost if `run_agent` ever needed to call `search_listings` more than once per
+request.
+
+**Remaining limitations and risks, honestly:**
+
+- **Query-phrasing coverage is thin.** Criteria 1, 4, and 5 are each backed by
+  exactly one hand-picked query run 5 times against a deterministic search
+  function; criterion 3 now has two queries. None of this tests the actual
+  risk criterion 1's own justification names — "synonyms, paraphrases, a word
+  that doesn't appear verbatim" — since `search_listings` has no randomness
+  and the same query always produces the same candidates. A query that a
+  person would consider a reasonable match but that shares no literal words
+  with the listing text (e.g. "comfy old band shirt" for a "graphic tee")
+  would score 0 and be silently dropped, by design of
+  `tools.py::_keyword_score`'s exact-word-overlap scoring — this is exactly
+  why criterion 1's target is 4/5 and not 5/5, so it's an accepted, named
+  limitation rather than a surprise, but it's still genuinely untested here.
+- **`_keyword_score` does plain word-overlap, not stemming or synonyms.** A
+  query word like "jean" won't match a listing that only says "jeans," and a
+  query like "shoes" won't match "sneakers" or "boots" unless that exact word
+  appears in the listing's `style_tags`. This is a known trade-off for a
+  small mock dataset, not a bug, but it bounds how well the search would
+  generalize past these 40 listings.
+- **MCP overhead**, covered above — a fresh subprocess per `search_listings`
+  call, acceptable at the current single-call-per-request scale.
+- **Fit-card content checks (criterion 4) are read by eye, not automated.**
+  `run_eval.py` deliberately leaves PASS/FAIL blank for a human to fill in;
+  nothing in the codebase automatically verifies a fit card mentions the
+  item, price, and platform. That's correct for this course's grading model,
+  but it means the criterion 4 verdicts in this README rest on my own
+  reading of 5 generated captions each time, not on a script.
+
+I didn't address any of these because none of them are failures against a
+written target — they're scope boundaries I noticed while writing the
+evaluation and diagnosis, and fixing them (broader phrasing tests, stemming,
+a persistent MCP connection, automated fit-card content checks) would each be
+a real, separate piece of work rather than something to slip in at the end of
+Milestone 6 without its own test.
+
 
 
 <!-- ═════════════════════════════════════════════════════════════════════
