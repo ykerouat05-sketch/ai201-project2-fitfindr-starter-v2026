@@ -262,15 +262,80 @@ Mentions the item ("butterfly print Y2K baby tee"), the price ("$18.0"), and the
      Look for a pattern. Three misses on the same tool is one problem, not
      three. -->
 
+All five verdicts below are read straight off `results/run_2026-10-11_1449_before.md`
+(the raw evidence from `run_eval.py::run_once` / `agent.py::run_agent`), not assumed.
+
 | # | Criterion | Target | Verdict | How I decided |
 |---|---|---|---|---|
-| 1 |  |  |  |  |
-| 2 |  |  |  |  |
-| 3 |  |  |  |  |
-| 4 |  |  |  |  |
-| 5 |  |  |  |  |
+| 1 | Matching query completes all three tools | 4/5 | **MET** (5/5) | All 5 tries of "matching query completes" show `stopped early: no`, a `selected_item`, and a non-empty fit card — every try completed `search_listings` → `suggest_outfit` → `create_fit_card` and returned the card. |
+| 2 | Impossible query stops early | 5/5 | **MET** (5/5) | All 5 tries of "impossible query stops early" show `stopped early: yes`, `search_results: 0`, and the identical specific message naming the description/size/price to change — none show a `[3] create_fit_card` trace step. |
+| 3 | Size and price constraints | 4/5 | **MET** (5/5) | All 5 tries of "size and price constraints" selected the same listing, whose actual `size` field is `"L"` and `price` is `24.0` — both satisfy the query's `size="L"` and `max_price=30`. |
+| 4 | Fit card mentions item, price, platform | 4/5 | **MET** (5/5) | All 5 independently-generated fit cards in "fit card mentions item, price, platform" name the item (e.g. "butterfly print Y2K baby tee"), the price ($18.0 or $18), and the platform ("depop") — checked each of the 5 texts individually, not just one. |
+| 5 | Correct tool-call order | 5/5 | **MET** (5/5) | All 5 tries of "correct tool-call order" trace `[1] search_listings (via MCP)` → `[2] suggest_outfit` → `[3] create_fit_card`, in that order. The early-stop half of this rule is additionally confirmed by criterion 2's traces, which show `[1] search_listings` → `[2] branch` with no `[3]` step in any of its 5 tries. |
 
 **Diagnoses**
+
+There were no misses to diagnose — all five criteria hit 5/5 against targets of 4/5
+or 5/5. No target was lowered and no test was altered to make this happen; this is
+the result of the first real run.
+
+That said, "all 5/5" isn't the same as "all targets were well-tested," and I don't
+think it's honest to just stop at the headline numbers. Two of the four scenarios
+behind a MET verdict (criteria 1 and 3) ran the *same literal query* five times
+against a fully deterministic, non-model function (`search_listings`). Since
+`search_listings` has no randomness, those five tries are not five independent
+samples of "does this work in general" — they're one sample, repeated. That matters
+specifically for criterion 3: the scenario's query (`tee size L under $30`) selects
+an item whose size is the plain, unambiguous token `"L"`. A broken, naive
+substring-based size filter (`"l" in listing_size`) would have passed this exact
+scenario too, because there's no superstring in the candidate pool for "L" to
+falsely match inside (nothing like `"XL"` or `"US 9"` is in the "tee"-matching
+candidate set for this query). In other words, **this specific test could not have
+caught the bug `tools.py::_size_matches` was written to avoid** — it happens to
+pass whether or not the token-matching fix is actually in place.
+
+**What I'd tighten next:** Criterion 3's test scenario, not its target. I'd add a
+second scenario to `scenarios.py` under criterion 3 — something like
+`"sneakers size S under $50"`, where the candidate pool (before size filtering)
+genuinely includes listings sized `"US 8"`, `"US 9"`, `"US 8.5"` that a naive
+substring check on `"s"` would wrongly include. Requiring the selected item's size
+to be an exact token match, 5/5, across *that* scenario would actually exercise the
+failure mode the original criterion's "why this target" paragraph names, instead of
+only confirming the easy case. I'd leave the original criterion and its 4/5 target
+exactly as written in `criteria.md` — the problem isn't the target, it's that the
+scenario testing it was too forgiving to ever disconfirm the claim.
+
+**Challenging each verdict** (the strongest case for the opposite call, and why it
+doesn't change the verdict):
+
+- **Criterion 1 (MET):** The counter-argument is the one above — one deterministic
+  query repeated 5 times isn't real evidence about "phrasings a person would use,"
+  which is exactly what the criterion's own justification worries about. But the
+  criterion as *written* only asks whether a query that matches something completes
+  all three tools, 4 of 5 tries — it doesn't require phrasing diversity. Read
+  literally, MET stands; the weakness is in test coverage, not in whether the
+  written condition was satisfied.
+- **Criterion 2 (MET):** Same objection: 5 identical runs of a pure Python
+  `if/else` aren't 5 independent trials in a statistical sense — a latent bug would
+  either be in all 5 or none. But criterion 2's own justification already accounts
+  for this ("there is no model randomness involved... anything less than 5 of 5
+  means the branch itself is broken"), so determinism was priced into the target
+  from the start. MET stands.
+- **Criterion 3 (MET):** Covered above — the strongest objection I found, since the
+  test literally cannot distinguish correct from buggy behavior for this scenario.
+  Still, judged strictly against what was measured (the selected item satisfied
+  both constraints, 5/5), the verdict is MET; the scenario, not the verdict, is
+  what's weak.
+- **Criterion 4 (MET):** One try's fit card says "for just $18" instead of
+  "$18.0" — if a grader demanded the literal numeral string from the data field,
+  that try would be borderline. But criterion 4 only requires the card "mention...
+  its price," not reproduce an exact format, and "$18" plainly communicates the
+  price. MET stands.
+- **Criterion 5 (MET):** The "correct tool-call order" scenario's query always
+  matches, so on its own it only proves the happy-path order, never the early-stop
+  half of the rule. But criterion 2's traces (same run) independently show the
+  early-stop half holding 5/5, so the full rule is still supported — just by two
+  scenarios together rather than one. MET stands.
 
 
 
