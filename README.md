@@ -238,21 +238,54 @@ that produced it:
 **Happy path**
 
 ```
+$ python app.py ask 'graphic tee under $30' --trace
 
+[1] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: 6 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Mesh Long-Sleeve Top — Black … +3 more
+[2] suggest_outfit
+      in:  dict with keys: new_item
+      out: Here are two outfit combinations featuring your new Y2K Butterfly Print Baby Tee and pieces from your wardrobe…
+[3] create_fit_card
+      in:  dict with keys: outfit
+      out: Unlocking my ultimate Y2K cool-girl era with this little butterfly print baby tee I just scored on depop! At o…
+
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+  Outfit:   Here are two outfit combinations featuring your new Y2K Butterfly Print Baby Tee...
+  Fit card: Unlocking my ultimate Y2K cool-girl era with this little butterfly print baby tee I just scored on depop!
+            At only $18.0, it's giving major nostalgic energy whether I style it with baggy denim or tailored trousers.
+            Obsessed with how effortlessly versatile this retro piece is!
 ```
 
 **Empty search**
 
 ```
+$ python app.py ask 'designer ballgown size XXS under $5' --trace
 
+[1] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: [] (empty)
+[2] branch
+      out: No listings matched 'designer ballgown' with size XXS and a price under $5.00. Try a broader description, a di…
+      →    empty search results — stopping before suggest_outfit/create_fit_card
+
+  No listings matched 'designer ballgown' with size XXS and a price under $5.00. Try a broader description, a
+  different size, or a higher price limit.
 ```
 
-**On the MCP move:** <!-- what changed in your code, and whether anything
-behaved differently afterwards. If the rewire didn't work, say exactly where it
-broke — the error text and the last thing that worked. That earns the point in
-full. -->
+The empty-search trace is 2 steps instead of 3 — it stops right after the branch, before either model tool runs.
 
+**On the MCP move:** The commit that was supposed to move `search_listings` to MCP (`c70e4d6`) had registered the tool correctly in `mcp_server.py` and added `from mcp_client import call_tool` to `agent.py`, but `run_agent()` was still calling the local `search_listings(...)` function directly — the import was never actually used. I swapped that one line for `call_tool("search_listings", {...})`, dropped the now-unused direct import of `search_listings` from `tools.py` (the other two tools still import directly — only `search_listings` moved), and confirmed `python mcp_client.py` can list the tool and that `run_agent()` returns the exact same shape of results as before. The rewire worked; the only visible difference is the trace line now reads `search_listings (via MCP)`.
 
+**Failure mode tests**
+
+| # | Failure mode | Command | Observed | Result |
+|---|---|---|---|---|
+| 1 | Empty search | `python app.py ask "designer ballgown size XXS under $5"` | Agent stopped after `search_listings` returned `[]`. `session["error"]` named the description, size, and price to change. "0 model calls this session" confirmed `suggest_outfit`/`create_fit_card` were never called. | PASS |
+| 2 | Empty wardrobe | `python app.py ask "graphic tee under $30" --empty-wardrobe` | `suggest_outfit` returned several paragraphs of general styling advice (no wardrobe pieces named, since there were none), and `create_fit_card` still produced a normal caption afterward. No crash, no empty string. | PASS |
+| 3 | Unavailable model | Temporarily flipped the last character of `GEMINI_API_KEY` in `.env`, then ran `python app.py ask "silk slip dress under $40 size M"` (a query not already in the response cache) | The program printed `ModelUnavailable: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.` and exited cleanly (exit code 1) — no hang, no raw Python traceback. Restored the original key immediately afterward and re-ran `python test.py`, which passed 10/10, confirming the key works again. | PASS |
+
+All three failure modes were triggered on purpose and handled without a crash or a hang.
 
 ---
 

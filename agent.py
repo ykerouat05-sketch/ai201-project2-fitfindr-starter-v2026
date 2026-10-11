@@ -17,7 +17,7 @@ import re
 from mcp_client import call_tool
 import config
 import trace
-from tools import search_listings, suggest_outfit, create_fit_card
+from tools import suggest_outfit, create_fit_card
 from generate import ModelUnavailable
 
 
@@ -143,10 +143,14 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     session["parsed"] = _parse_query(query)
     parsed = session["parsed"]
 
-    session["search_results"] = search_listings(
-        parsed["description"], size=parsed["size"], max_price=parsed["max_price"]
-    )
+    search_args = {
+        "description": parsed["description"],
+        "size": parsed["size"],
+        "max_price": parsed["max_price"],
+    }
+    session["search_results"] = call_tool("search_listings", search_args)
     search_results = session["search_results"]
+    trace.step("search_listings (via MCP)", inputs=search_args, returned=search_results)
 
     # ⚠️ THE BRANCH: nothing came back, so stop before calling the model tools.
     if not search_results:
@@ -160,15 +164,31 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             f"No listings matched '{parsed['description']}'{constraint_text}. "
             "Try a broader description, a different size, or a higher price limit."
         )
+        trace.step(
+            "branch", returned=session["error"],
+            note="empty search results — stopping before suggest_outfit/create_fit_card",
+        )
         return session
 
     session["selected_item"] = search_results[0]
     selected_item = session["selected_item"]
 
-    session["outfit_suggestion"] = suggest_outfit(selected_item, session["wardrobe"])
+    try:
+        session["outfit_suggestion"] = suggest_outfit(selected_item, session["wardrobe"])
+    except ModelUnavailable as exc:
+        session["error"] = str(exc)
+        trace.step("suggest_outfit", inputs={"new_item": selected_item}, note=f"ModelUnavailable: {exc}")
+        return session
     outfit_suggestion = session["outfit_suggestion"]
+    trace.step("suggest_outfit", inputs={"new_item": selected_item}, returned=outfit_suggestion)
 
-    session["fit_card"] = create_fit_card(outfit_suggestion, selected_item)
+    try:
+        session["fit_card"] = create_fit_card(outfit_suggestion, selected_item)
+    except ModelUnavailable as exc:
+        session["error"] = str(exc)
+        trace.step("create_fit_card", inputs={"outfit": outfit_suggestion}, note=f"ModelUnavailable: {exc}")
+        return session
+    trace.step("create_fit_card", inputs={"outfit": outfit_suggestion}, returned=session["fit_card"])
 
     return session
 
